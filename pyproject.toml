@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mlx-gen-parity"
-version = "0.1.0"
+version = "0.1.1"
 description = "MLX generation parity utils with HF/Torch-compatible sampling, processors, and steering hooks"
 authors = [{name = "Your Team"}]
 readme = "README.md"
@@ -23,3 +23,6 @@ packages = ["mlx_gen_parity"]
 
 [tool.setuptools.package-data]
 mlx_gen_parity = ["**/*.py"]
+
+[project.scripts]
+mlxgp-generate = "mlx_gen_parity.cli:generate_cmd"

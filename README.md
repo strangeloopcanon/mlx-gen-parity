@@ -81,6 +81,15 @@ Parity testing
 - Torch vs MLX: `python -m mlx_gen_parity.tests.parity_hf --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b --prompt 'hello'`
 - Suite (8 prompts): `python -m mlx_gen_parity.tests.parity_suite --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b`
 
+CLI wrapper
+```
+mlxgp-generate \
+  --model Qwen/Qwen3-0.6B \
+  --prompt "Hello MLX" \
+  --max-tokens 64 --temp 0.7 --top-p 0.95 \
+  --num-beams 1 --no-repeat-ngram-size 2
+```
+
 Performance bench
 ```
 python -m mlx_gen_parity.tests.perf_bench --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b --prompt "Hello performance" --max-tokens 64
