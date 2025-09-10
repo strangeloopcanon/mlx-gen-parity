@@ -1,0 +1,30 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Environments/IDEs
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+
+# Build artifacts
+build/
+dist/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Local artifacts
+parity_reports/
+mlx_*/
+mlx_model/
+

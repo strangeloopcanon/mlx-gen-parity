@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlx-gen-parity"
+version = "0.1.0"
+description = "MLX generation parity utils with HF/Torch-compatible sampling, processors, and steering hooks"
+authors = [{name = "Your Team"}]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "mlx>=0.17.0",
+  "mlx-lm>=0.17.0",
+  "transformers>=4.40.0; python_version >= '3.9'",
+]
+
+[project.urls]
+Homepage = "https://example.com"
