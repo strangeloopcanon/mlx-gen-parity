@@ -17,3 +17,9 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://example.com"
+
+[tool.setuptools]
+packages = ["mlx_gen_parity"]
+
+[tool.setuptools.package-data]
+mlx_gen_parity = ["**/*.py"]

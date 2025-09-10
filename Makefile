@@ -16,15 +16,7 @@ bump-version:
 	@echo "Version bumped ($${PART:-patch})."
 
 git-release:
-	@VERSION=$$($(PYTHON) - <<'PY'
-import re, sys
-v=None
-with open('mlx_gen_parity/__init__.py') as f:
-    m=re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", f.read())
-    v=m.group(1) if m else None
-print(v or "")
-PY
-); \
+	@VERSION=$$(sed -n "s/^__version__ = ['\"]\(.*\)['\"]/\1/p" mlx_gen_parity/__init__.py); \
 	if [ -z "$$VERSION" ]; then echo "Could not read version"; exit 1; fi; \
 	echo "Tagging v$$VERSION"; \
 	git tag v$$VERSION && git push origin v$$VERSION && git push

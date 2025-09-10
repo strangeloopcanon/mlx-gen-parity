@@ -10,8 +10,16 @@ Features
 - Training (MLX): `loss_forward`, `xent_loss` (label smoothing), mixed-precision compute (bf16) with fp32 master weights.
 
 Install
+- From PyPI (recommended):
+```
+pip install mlx-gen-parity
+```
+- Dependencies (if not already installed):
 ```
 pip install mlx mlx-lm transformers
+```
+- From source (editable):
+```
 pip install -e .
 ```
 
