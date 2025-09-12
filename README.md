@@ -8,6 +8,8 @@ Features
 - Modes: sampling (fast path via mlx-lm), beam (`num_beams`, `length_penalty`, `early_stopping`), speculative (mlx-lm), sliding KV (`max_kv_size`).
 - Hooks: ResidualInjectionHook (sampling) and LogitBiasHook (sampling/beam); SoftPromptHook for training.
 - Training (MLX): `loss_forward`, `xent_loss` (label smoothing), mixed-precision compute (bf16) with fp32 master weights.
+- Training utilities: `sequence_logprob`, `token_kl` for scoring and policy KL.
+- Model helpers: `ema_update`, `build_action_mask`, `stable_softmax`; best-effort `clone_reference`.
 
 Install
 - From PyPI (recommended):
@@ -75,6 +77,23 @@ opt = AdamW(learning_rate=2e-4)
 batch = {'tokens': ...}  # mx.array [B, T]
 cfg = TrainingConfig(dtype='bf16', loss_scale=1024.0)
 loss = train_step(model, batch, opt, cfg, hooks=[SoftPromptHook(n_virtual=10, param_key='_soft_prompt')], pad_id=pad_id)
+```
+
+Utilities
+```
+from mlx_gen_parity import sequence_logprob, token_kl, ema_update, build_action_mask
+
+# Per-sample mean log-prob on supervised positions (labels == -100 are ignored)
+lp = sequence_logprob(model, batch_tokens, labels)  # [B]
+
+# KL(pi || pref) averaged over supervised positions
+kl = token_kl(model, ref_model, batch_tokens, labels)  # [B]
+
+# EMA update of a target model from a source model
+ema_update(target_model, model, decay=0.999)
+
+# Supervised mask after prompt
+mask = build_action_mask(prompt_lens=[12, 20], seq_len=T)  # [B, T] bool
 ```
 
 Parity testing
