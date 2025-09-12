@@ -26,5 +26,5 @@ dist/
 # Local artifacts
 parity_reports/
 mlx_*/
+!mlx_gen_parity/
 mlx_model/
-
