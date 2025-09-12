@@ -127,10 +127,22 @@ def ema_update(dst_model: Any, src_model: Any, decay: float = 0.999) -> None:
 
     Uses trainable parameters tree for both models; updates dst in-place.
     """
-    mx, _ = try_import_mlx()
+    mx, nn = try_import_mlx()
     d = dst_model.trainable_parameters()
     s = src_model.trainable_parameters()
-    new = mx.tree_map(lambda a, b: a * decay + b * (1.0 - decay), d, s)
+
+    tm = getattr(mx, "tree_map", None) or getattr(nn, "tree_map", None)
+
+    if tm is None:
+        def _tree_map(fn, x, y):
+            if isinstance(x, dict) and isinstance(y, dict):
+                return {k: _tree_map(fn, x[k], y[k]) for k in x.keys()}
+            if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+                out = [_tree_map(fn, xi, yi) for xi, yi in zip(x, y)]
+                return type(x)(out)
+            return fn(x, y)
+        tm = _tree_map
+    new = tm(lambda a, b: a * decay + b * (1.0 - decay), d, s)
     dst_model.update(new)
 
 

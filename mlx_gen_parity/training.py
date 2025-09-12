@@ -272,13 +272,23 @@ def train_step(
             if cfg.dtype == "bf16":
                 mx, _ = try_import_mlx()
                 fp32_params = model.trainable_parameters()
-                bf16_params = mx.tree_map(lambda p: p.astype(mx.bfloat16), fp32_params)
+                tm = getattr(mx, "tree_map", None) or getattr(nn, "tree_map", None)
+                if tm is None:
+                    def _tree_map(fn, x):
+                        if isinstance(x, dict):
+                            return {k: _tree_map(fn, v) for k, v in x.items()}
+                        if isinstance(x, (list, tuple)):
+                            out = [_tree_map(fn, v) for v in x]
+                            return type(x)(out)
+                        return fn(x)
+                    tm = lambda fn, x, *args: _tree_map(fn, x)
+                bf16_params = tm(lambda p: p.astype(mx.bfloat16), fp32_params)
                 model.update(bf16_params)
                 val_and_grad = nn.value_and_grad(model, lambda: loss_fn(sl) * cfg.loss_scale)
                 loss, grads = val_and_grad()
                 # Back to fp32 params for optimizer update later
                 model.update(fp32_params)
-                grads = mx.tree_map(lambda g: g.astype(mx.float32) / cfg.loss_scale, grads)
+                grads = tm(lambda g: g.astype(mx.float32) / cfg.loss_scale, grads)
                 loss = loss / cfg.loss_scale
             else:
                 val_and_grad = nn.value_and_grad(model, lambda: loss_fn(sl))
@@ -288,10 +298,22 @@ def train_step(
             if grads_accum is None:
                 grads_accum = grads
             else:
-                grads_accum = mx.tree_map(lambda a, b: a + b, grads_accum, grads)
+                # tm with binary fn; if our tm is unary-only wrapper, define local binary map
+                bin_tm = getattr(mx, "tree_map", None) or getattr(nn, "tree_map", None)
+                if bin_tm is None:
+                    def _tree_map2(fn, x, y):
+                        if isinstance(x, dict) and isinstance(y, dict):
+                            return {k: _tree_map2(fn, x[k], y[k]) for k in x.keys()}
+                        if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+                            out = [_tree_map2(fn, xi, yi) for xi, yi in zip(x, y)]
+                            return type(x)(out)
+                        return fn(x, y)
+                    grads_accum = _tree_map2(lambda a, b: a + b, grads_accum, grads)
+                else:
+                    grads_accum = bin_tm(lambda a, b: a + b, grads_accum, grads)
         # Average grads over microbatches
         if total_steps > 1:
-            grads_accum = mx.tree_map(lambda g: g / total_steps, grads_accum)
+            grads_accum = tm(lambda g: g / total_steps, grads_accum)
 
     closure()
 
