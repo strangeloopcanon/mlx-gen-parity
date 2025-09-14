@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mlx-gen-parity"
-version = "0.1.3"
+version = "0.1.4"
 description = "MLX generation parity utils with HF/Torch-compatible sampling, processors, and steering hooks"
 authors = [{name = "Your Team"}]
 readme = "README.md"
