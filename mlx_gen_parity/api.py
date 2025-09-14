@@ -68,7 +68,7 @@ def _prepare_prompt(tokenizer, prompt: Union[str, Sequence[int]]):
     return ids, tk
 
 
-def _maybe_make_prompt_cache(model, kv_bits: Optional[int] = None, max_kv_size: Optional[int] = None):
+def _maybe_make_prompt_cache(model, max_kv_size: Optional[int] = None):
     lm_cache = try_import_mlx_lm_cache()
     if lm_cache is None:
         return None
@@ -98,20 +98,19 @@ def _step_logits(model, components: ModelComponents, input_tokens, cache=None, i
     return logits[:, -1, :], cache
 
 
-def _batched_last_logprobs(
+def _batched_last_logits(
     model,
     components: ModelComponents,
     batch_token_lists: List[List[int]],
 ):
-    """Compute last-position logprobs for a batch of token sequences.
+    """Compute last-position logits for a batch of token sequences.
 
     Assumes all sequences are the same length (true within beam steps).
     """
     mx, _ = try_import_mlx()
     arr = as_mx_array(batch_token_lists, dtype=mx.int32)
     logits, _ = _step_logits(model, components, arr, cache=None)
-    logprobs = stable_log_softmax(logits)
-    return logprobs
+    return logits
 
 
 def forward_with_hidden(
@@ -573,9 +572,9 @@ def generate(
         if config.stop_sequences:
             # Only consider generated segment for stop matching
             gen_tokens = tokens[len(ids):]
+            hit = False
             if gen_tokens:
                 decoded_gen = tk.decode(gen_tokens)
-                hit = False
                 for s in config.stop_sequences:
                     if s and s in decoded_gen:
                         idx = decoded_gen.find(s)
@@ -589,8 +588,6 @@ def generate(
                         break
                 if hit:
                     break
-            if hit:
-                break
 
     if not finish_reason and n_generated >= config.max_tokens:
         finish_reason = "length"
@@ -654,20 +651,20 @@ def _beam_search_generate(
         if not alive:
             break
         seqs = [t for (t, s) in alive]
-        # Compute logprobs for each alive beam as a batch
+        # Compute logits for each alive beam as a batch
         if beam_injector and residual_hooks:
             try:
                 # Patch for current step using batch and seq len
                 beam_injector.patch(residual_hooks, n_generated, batch=len(seqs), seq_len=len(seqs[0]), model=model)
-                lp_batch = _batched_last_logprobs(model, components, seqs)
+                logits_batch = _batched_last_logits(model, components, seqs)
             finally:
                 beam_injector.restore()
         else:
-            lp_batch = _batched_last_logprobs(model, components, seqs)
+            logits_batch = _batched_last_logits(model, components, seqs)
         # For each beam, apply processors and constraints
         candidates: List[Tuple[float, int, int]] = []  # (new_score, beam_index, token)
         for i, (tokens, score) in enumerate(alive):
-            logits = lp_batch[i : i + 1, :]
+            logits = logits_batch[i : i + 1, :]
             for proc in processors:
                 logits = proc(tokens, logits)
             # Forced tokens

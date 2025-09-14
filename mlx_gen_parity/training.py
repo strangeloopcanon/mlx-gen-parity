@@ -78,10 +78,14 @@ def loss_forward(
         sp = mx.broadcast_to(sp, (B, sp.shape[1], sp.shape[2]))
         input_embeddings = mx.concat([sp, tok_embeds], axis=1)
         dummy_tokens = mx.zeros((B, input_embeddings.shape[1]), dtype=mx.int32)
-        logits = model(dummy_tokens, input_embeddings=input_embeddings)
-        # Align to original token positions: drop the virtual soft prompt positions
-        S = sp_used.shape[0]
-        logits = logits[:, S:, :]
+        try:
+            logits = model(dummy_tokens, input_embeddings=input_embeddings)
+            # Align to original token positions: drop the virtual soft prompt positions
+            S = sp_used.shape[0]
+            logits = logits[:, S:, :]
+        except TypeError:
+            # Fallback: model does not support input_embeddings kwarg
+            logits = model(tok_batch)
     else:
         logits = model(tok_batch)
 
@@ -148,6 +152,30 @@ def apply_lora(
     Returns a list of patched modules for reference.
     """
     mx, nn = try_import_mlx()
+
+    # Tree map helpers (unary/binary) across param/grad pytrees
+    tm_core = getattr(mx, "tree_map", None) or getattr(nn, "tree_map", None)
+
+    def _tree_map_unary(fn, x):
+        if tm_core is not None:
+            return tm_core(fn, x)
+        # Fallback recursive map
+        if isinstance(x, dict):
+            return {k: _tree_map_unary(fn, v) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            out = [_tree_map_unary(fn, v) for v in x]
+            return type(x)(out)
+        return fn(x)
+
+    def _tree_map_binary(fn, x, y):
+        if tm_core is not None:
+            return tm_core(lambda a, b: fn(a, b), x, y)
+        if isinstance(x, dict) and isinstance(y, dict):
+            return {k: _tree_map_binary(fn, x[k], y[k]) for k in x.keys()}
+        if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+            out = [_tree_map_binary(fn, xi, yi) for xi, yi in zip(x, y)]
+            return type(x)(out)
+        return fn(x, y)
     patched = []
 
     def wants(name: str):
@@ -241,6 +269,29 @@ def train_step(
     """
     mx, nn = try_import_mlx()
 
+    # Tree map helpers (unary/binary) across param/grad pytrees
+    tm_core = getattr(mx, "tree_map", None) or getattr(nn, "tree_map", None)
+
+    def _tree_map_unary(fn, x):
+        if tm_core is not None:
+            return tm_core(fn, x)
+        if isinstance(x, dict):
+            return {k: _tree_map_unary(fn, v) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            out = [_tree_map_unary(fn, v) for v in x]
+            return type(x)(out)
+        return fn(x)
+
+    def _tree_map_binary(fn, x, y):
+        if tm_core is not None:
+            return tm_core(lambda a, b: fn(a, b), x, y)
+        if isinstance(x, dict) and isinstance(y, dict):
+            return {k: _tree_map_binary(fn, x[k], y[k]) for k in x.keys()}
+        if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+            out = [_tree_map_binary(fn, xi, yi) for xi, yi in zip(x, y)]
+            return type(x)(out)
+        return fn(x, y)
+
     tokens = batch["tokens"]
     B, L = tokens.shape
     ignore_index = pad_id if pad_id is not None else -100
@@ -270,25 +321,14 @@ def train_step(
             # Compute value and grads wrt model trainable params
             # Mixed-precision compute path: cast params to bf16 for compute only
             if cfg.dtype == "bf16":
-                mx, _ = try_import_mlx()
                 fp32_params = model.trainable_parameters()
-                tm = getattr(mx, "tree_map", None) or getattr(nn, "tree_map", None)
-                if tm is None:
-                    def _tree_map(fn, x):
-                        if isinstance(x, dict):
-                            return {k: _tree_map(fn, v) for k, v in x.items()}
-                        if isinstance(x, (list, tuple)):
-                            out = [_tree_map(fn, v) for v in x]
-                            return type(x)(out)
-                        return fn(x)
-                    tm = lambda fn, x, *args: _tree_map(fn, x)
-                bf16_params = tm(lambda p: p.astype(mx.bfloat16), fp32_params)
+                bf16_params = _tree_map_unary(lambda p: p.astype(mx.bfloat16), fp32_params)
                 model.update(bf16_params)
                 val_and_grad = nn.value_and_grad(model, lambda: loss_fn(sl) * cfg.loss_scale)
                 loss, grads = val_and_grad()
                 # Back to fp32 params for optimizer update later
                 model.update(fp32_params)
-                grads = tm(lambda g: g.astype(mx.float32) / cfg.loss_scale, grads)
+                grads = _tree_map_unary(lambda g: g.astype(mx.float32) / cfg.loss_scale, grads)
                 loss = loss / cfg.loss_scale
             else:
                 val_and_grad = nn.value_and_grad(model, lambda: loss_fn(sl))
@@ -298,22 +338,10 @@ def train_step(
             if grads_accum is None:
                 grads_accum = grads
             else:
-                # tm with binary fn; if our tm is unary-only wrapper, define local binary map
-                bin_tm = getattr(mx, "tree_map", None) or getattr(nn, "tree_map", None)
-                if bin_tm is None:
-                    def _tree_map2(fn, x, y):
-                        if isinstance(x, dict) and isinstance(y, dict):
-                            return {k: _tree_map2(fn, x[k], y[k]) for k in x.keys()}
-                        if isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
-                            out = [_tree_map2(fn, xi, yi) for xi, yi in zip(x, y)]
-                            return type(x)(out)
-                        return fn(x, y)
-                    grads_accum = _tree_map2(lambda a, b: a + b, grads_accum, grads)
-                else:
-                    grads_accum = bin_tm(lambda a, b: a + b, grads_accum, grads)
+                grads_accum = _tree_map_binary(lambda a, b: a + b, grads_accum, grads)
         # Average grads over microbatches
         if total_steps > 1:
-            grads_accum = tm(lambda g: g / total_steps, grads_accum)
+            grads_accum = _tree_map_unary(lambda g: g / total_steps, grads_accum)
 
     closure()
 

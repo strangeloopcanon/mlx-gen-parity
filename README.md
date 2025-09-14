@@ -32,6 +32,14 @@ Models from Hugging Face
   - CLI: `mlx_lm.convert --hf-path Qwen/Qwen3-0.6B --mlx-path mlx_qwen3_0_6b`
   - Then load with `load('mlx_qwen3_0_6b')`.
 
+Auto-convert loader
+- You can pass either an HF repo id or a local MLX path to `auto_load`, which will convert once and cache under `./mlx_cache/<sanitized_repo_id>`:
+```
+from mlx_gen_parity.loader import auto_load
+model, tokenizer, local_path = auto_load('Qwen/Qwen3-0.6B')
+print('Loaded from', local_path)  # e.g., ./mlx_cache/Qwen_Qwen3-0.6B
+```
+
 Basic usage
 ```
 from mlx_gen_parity import GenerationConfig, generate
@@ -124,3 +132,12 @@ Releases
 Notes
 - Parity targets control‑surface equivalence: constraints, stops, finish reasons, determinism; token streams may differ across frameworks/devices.
 - Sampling fast path reuses mlx-lm’s decoding loop and caches for best performance on Apple Silicon.
+
+Known limitations
+- Residual injection uses Python-level patching; highly optimized/compiled paths may bypass it. Use `forward_with_hidden(..., strict=True)` when you need deterministic capture/injection semantics.
+- Some MLX model classes may not accept `input_embeddings` (used for soft prompts in training). In those cases, the library now falls back gracefully to standard token-only forward.
+- Beam search applies processors on raw logits and then normalizes (HF behavior). Earlier parity reports in this repo may reflect the previous implementation on normalized logprobs.
+
+Tips
+- When running examples directly from the repo, make sure you’re using the local sources: `pip install -e .` or run with `PYTHONPATH=.`.
+- Parity/perf harnesses will download HF models; ensure network access and sufficient disk space.
