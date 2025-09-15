@@ -12,7 +12,7 @@ from typing import Dict
 import mlx.core as mx
 from mlx_lm import load
 
-from mlx_gen_parity import (
+from mlx_genkit import (
     TrainingConfig,
     train_step,
     loss_forward,
@@ -82,4 +82,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
