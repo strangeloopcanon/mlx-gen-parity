@@ -1,6 +1,6 @@
-# mlx-gen-parity
+# mlx-genkit (formerly mlx-gen-parity)
 
-Small, reusable MLX decoding and training library that brings HF/Torch `generate()` feature parity and clean persona steering to Apple Silicon. It reuses mlx-lm primitives (caches, projections, speculative) and fills the missing parity pieces.
+Small, reusable MLX generation and training toolkit that brings HF/Torch `generate()` feature parity and clean persona steering to Apple Silicon. It reuses mlx-lm primitives (caches, projections, speculative) and fills the missing parity pieces.
 
 Features
 - HF-style `GenerationConfig` with processors/warpers: repetition penalty, no-repeat-ngrams, frequency/presence, bad-words, min_new_tokens, `typical_p`, `epsilon_cutoff`.
@@ -14,7 +14,7 @@ Features
 Install
 - From PyPI (recommended):
 ```
-pip install mlx-gen-parity
+pip install mlx-genkit
 ```
 - Dependencies (if not already installed):
 ```
@@ -28,21 +28,21 @@ pip install -e .
 Models from Hugging Face
 - If the repo provides MLX weights (e.g., in `mlx-community`), you can load directly: `load('mlx-community/<model>')`.
 - For standard HF (PyTorch) repos, convert once using mlx-lm:
-  - Python: `from mlx_gen_parity.interop import convert_hf_to_mlx; convert_hf_to_mlx('Qwen/Qwen3-0.6B', quantize=False, local_out='mlx_qwen3_0_6b')`
+  - Python: `from mlx_genkit.interop import convert_hf_to_mlx; convert_hf_to_mlx('Qwen/Qwen3-0.6B', quantize=False, local_out='mlx_qwen3_0_6b')`
   - CLI: `mlx_lm.convert --hf-path Qwen/Qwen3-0.6B --mlx-path mlx_qwen3_0_6b`
   - Then load with `load('mlx_qwen3_0_6b')`.
 
 Auto-convert loader
 - You can pass either an HF repo id or a local MLX path to `auto_load`, which will convert once and cache under `./mlx_cache/<sanitized_repo_id>`:
 ```
-from mlx_gen_parity.loader import auto_load
+from mlx_genkit.loader import auto_load
 model, tokenizer, local_path = auto_load('Qwen/Qwen3-0.6B')
 print('Loaded from', local_path)  # e.g., ./mlx_cache/Qwen_Qwen3-0.6B
 ```
 
 Basic usage
 ```
-from mlx_gen_parity import GenerationConfig, generate
+from mlx_genkit import GenerationConfig, generate
 from mlx_lm import load
 
 model, tokenizer = load('mlx_qwen3_0_6b')
@@ -69,7 +69,7 @@ out = generate(model, tokenizer, 'Speculative test', cfg)
 Persona steering
 ```
 import mlx.core as mx
-from mlx_gen_parity import LogitBiasHook
+from mlx_genkit import LogitBiasHook
 H = model.args.hidden_size
 model['_persona_v'] = mx.random.normal((H,)) * (1.0/(H**0.5))
 cfg = GenerationConfig(max_tokens=64, temperature=0.7)
@@ -78,7 +78,7 @@ out = generate(model, tokenizer, 'Summarize MLX', cfg, hooks=[LogitBiasHook(para
 
 Training (MLX)
 ```
-from mlx_gen_parity import TrainingConfig, train_step, SoftPromptHook
+from mlx_genkit import TrainingConfig, train_step, SoftPromptHook
 from mlx.optimizers import AdamW
 pad_id = getattr(tokenizer, 'pad_token_id', -100) or -100
 opt = AdamW(learning_rate=2e-4)
@@ -89,7 +89,7 @@ loss = train_step(model, batch, opt, cfg, hooks=[SoftPromptHook(n_virtual=10, pa
 
 Utilities
 ```
-from mlx_gen_parity import sequence_logprob, token_kl, ema_update, build_action_mask
+from mlx_genkit import sequence_logprob, token_kl, ema_update, build_action_mask
 
 # Per-sample mean log-prob on supervised positions (labels == -100 are ignored)
 lp = sequence_logprob(model, batch_tokens, labels)  # [B]
@@ -110,7 +110,7 @@ Parity testing
 
 CLI wrapper
 ```
-mlxgp-generate \
+mlxgk-generate \
   --model Qwen/Qwen3-0.6B \
   --prompt "Hello MLX" \
   --max-tokens 64 --temp 0.7 --top-p 0.95 \
@@ -132,6 +132,9 @@ Releases
 Notes
 - Parity targets control‑surface equivalence: constraints, stops, finish reasons, determinism; token streams may differ across frameworks/devices.
 - Sampling fast path reuses mlx-lm’s decoding loop and caches for best performance on Apple Silicon.
+
+Renaming
+- This project was previously published as `mlx-gen-parity`. The Python import `mlx_gen_parity` continues to work for compatibility, but new code should prefer `mlx_genkit` and `pip install mlx-genkit`.
 
 Known limitations
 - Residual injection uses Python-level patching; highly optimized/compiled paths may bypass it. Use `forward_with_hidden(..., strict=True)` when you need deterministic capture/injection semantics.

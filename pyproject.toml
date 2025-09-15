@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mlx-gen-parity"
-version = "0.1.4"
+name = "mlx-genkit"
+version = "0.2.0"
 description = "MLX generation parity utils with HF/Torch-compatible sampling, processors, and steering hooks"
 authors = [{name = "Your Team"}]
 readme = "README.md"
@@ -16,13 +16,15 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://example.com"
+Homepage = "https://github.com/strangeloopcanon/mlx-genkit"
 
 [tool.setuptools]
-packages = ["mlx_gen_parity"]
+packages = ["mlx_gen_parity", "mlx_genkit"]
 
 [tool.setuptools.package-data]
 mlx_gen_parity = ["**/*.py"]
+mlx_genkit = ["**/*.py"]
 
 [project.scripts]
 mlxgp-generate = "mlx_gen_parity.cli:generate_cmd"
+mlxgk-generate = "mlx_genkit.cli:generate_cmd"
