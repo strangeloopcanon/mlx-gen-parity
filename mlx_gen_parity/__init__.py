@@ -24,6 +24,13 @@ __all__ = [
     "clone_reference",
 ]
 
+import warnings as _warnings
+_warnings.warn(
+    "mlx-gen-parity is deprecated; install 'mlx-genkit' and import 'mlx_genkit'.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from .api import (
     GenerationConfig,
     generate,
