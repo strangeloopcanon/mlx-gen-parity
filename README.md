@@ -123,8 +123,8 @@ python -m mlx_genkit.tests.perf_bench --hf-model Qwen/Qwen3-0.6B --mlx-model ./m
 ```
 
 Releases
-- Bump version across files:
-  - `make bump-version PART=patch` (or `minor`/`major`)
+- Bump version across files (defaults to patch):
+  - `make bump-version` (use `PART=minor` or `PART=major` to override)
 - Create and push a git tag (vX.Y.Z):
   - `make git-release`
   - This tags and pushes the repo; PyPI packaging can be added later.

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import re
-import sys
 from pathlib import Path
 
 
@@ -48,8 +48,21 @@ def bump(ver: str, part: str) -> str:
     return f"{major}.{minor}.{patch}"
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Bump project version")
+    parser.add_argument(
+        "part",
+        nargs="?",
+        default="patch",
+        choices=("patch", "minor", "major"),
+        help="Which semantic version part to bump (default: patch)",
+    )
+    return parser.parse_args()
+
+
 def main():
-    part = (sys.argv[1] if len(sys.argv) > 1 else "patch").lower()
+    args = parse_args()
+    part = args.part
     init_path = Path("mlx_genkit/__init__.py")
     proj_path = Path("pyproject.toml")
     old = read_version_pyinit(init_path)
