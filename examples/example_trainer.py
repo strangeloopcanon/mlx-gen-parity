@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-Minimal training skeleton for mlx-gen-parity.
+Minimal training skeleton for mlx-genkit.
 
 This example trains persona vectors or LoRA adapters on top of an MLX model.
 """

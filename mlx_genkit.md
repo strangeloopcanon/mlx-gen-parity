@@ -2,7 +2,7 @@ Proposal
 
 - Goal: A small, reusable MLX decoding library that matches Hugging Face/Torch “generate()” behavior closely and supports persona
 steering cleanly.
-- Name (placeholder): mlx-gen-parity
+- Name (placeholder): mlx-genkit
 - Value: Use it across projects to avoid re‑implementing safe sampling, logits processors, and injection hooks each time.
 
 Scope
@@ -80,13 +80,13 @@ sample prompts.
 
 Integration Plan
 
-- Drop-in: Replace current MLX helper calls with mlx-gen-parity.generate(...).
+- Drop-in: Replace current MLX helper calls with mlx-genkit.generate(...).
 - Scripts: Add flags mapping to GenerationConfig fields; use hooks for persona vectors.
 - Fallback: If a model fails layer injection, auto‑fallback to logit-bias with a warning (configurable).
 
 Project Layout (proposed)
 
-- mlx_gen_parity/
+- mlx_genkit/
     - api.py (generate, config, hooks)
     - sampling.py (processors, samplers)
     - adapters.py (model/heads, tokenizer bridge)
@@ -104,6 +104,5 @@ Usage Sketch
 
 Next Steps
 
-- I can extract and refactor the working pieces from our repo into a mlx-gen-parity module, stub the adapters for Qwen/Llama, and wire
-the parity harness. When you’re ready, we’ll iterate on injection parity and extend coverage.
-
+- I can extract and refactor the working pieces from our repo into a mlx-genkit module, stub the adapters for Qwen/Llama, and wire the
+parity harness. When you’re ready, we’ll iterate on injection parity and extend coverage.

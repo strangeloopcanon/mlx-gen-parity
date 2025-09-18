@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-Demo script to exercise mlx-gen-parity helpers:
+Demo script to exercise mlx-genkit helpers:
 
  - sequence_logprob
  - token_kl
@@ -10,7 +10,7 @@ Demo script to exercise mlx-gen-parity helpers:
  - stable_softmax
 
 Run:
-  python -m mlx_gen_parity.tests.utils_demo --model ./mlx_qwen3_0_6b --seq 32
+  python -m mlx_genkit.tests.utils_demo --model ./mlx_qwen3_0_6b --seq 32
 """
 
 import argparse
@@ -19,7 +19,7 @@ from typing import List
 import mlx.core as mx
 from mlx_lm import load as mlx_load
 
-from mlx_gen_parity import (
+from mlx_genkit import (
     sequence_logprob,
     token_kl,
     ema_update,
@@ -55,7 +55,7 @@ def main():
 
     prompts = [
         "Hello MLX parity",
-        "Utilities demo for mlx-gen-parity",
+        "Utilities demo for mlx-genkit",
     ]
     T = int(args.seq)
     tokens, prompt_lens = make_batch(tokenizer, prompts, T)
@@ -79,7 +79,7 @@ def main():
     print("sequence_logprob per sample:", [float(x) for x in seq_lp.tolist()])  # noqa: T201
 
     # stable_softmax sanity: sum to ~1.0 at a prompt position
-    from mlx_gen_parity import loss_forward
+    from mlx_genkit import loss_forward
 
     logits = loss_forward(model, tokens)  # [B, T, V]
     pos0 = max(0, prompt_lens[0] - 1)

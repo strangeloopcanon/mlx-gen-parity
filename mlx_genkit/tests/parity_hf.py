@@ -8,7 +8,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from mlx_lm import load as mlx_load
-from mlx_gen_parity import GenerationConfig, generate
+from mlx_genkit import GenerationConfig, generate
 
 
 @dataclass

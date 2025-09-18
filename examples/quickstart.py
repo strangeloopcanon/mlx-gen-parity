@@ -10,7 +10,7 @@ import argparse
 
 import mlx.core as mx
 from mlx_genkit import GenerationConfig, generate, TrainingConfig, train_step, SoftPromptHook
-from mlx_gen_parity.loader import auto_load
+from mlx_genkit.loader import auto_load
 from mlx.optimizers import AdamW
 
 

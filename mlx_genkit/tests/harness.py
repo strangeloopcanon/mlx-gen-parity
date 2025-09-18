@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from mlx_gen_parity import generate, GenerationConfig
+from mlx_genkit import generate, GenerationConfig
 
 
 def main():

@@ -16,7 +16,7 @@ bump-version:
 	@echo "Version bumped ($${PART:-patch})."
 
 git-release:
-	@VERSION=$$(sed -n "s/^__version__ = ['\"]\(.*\)['\"]/\1/p" mlx_gen_parity/__init__.py); \
+	@VERSION=$$(sed -n "s/^__version__ = ['\"]\(.*\)['\"]/\1/p" mlx_genkit/__init__.py); \
 	if [ -z "$$VERSION" ]; then echo "Could not read version"; exit 1; fi; \
 	echo "Tagging v$$VERSION"; \
 	git tag v$$VERSION && git push origin v$$VERSION && git push

@@ -16,7 +16,7 @@ def _parse_int_list(s: str) -> List[int]:
 
 
 def generate_cmd():
-    ap = argparse.ArgumentParser(prog="mlxgp.generate", description="Generate text with MLX + parity features")
+    ap = argparse.ArgumentParser(prog="mlxgk.generate", description="Generate text with MLX + generation-parity features")
     ap.add_argument("--model", required=True, help="HF repo id or local MLX path")
     ap.add_argument("--prompt", required=True, help="Prompt text")
     ap.add_argument("--max-tokens", type=int, default=128)
@@ -72,4 +72,3 @@ def generate_cmd():
 
     res = generate(model, tokenizer, args.prompt, cfg)
     print(res["text"])  # noqa: T201
-

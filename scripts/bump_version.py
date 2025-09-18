@@ -50,7 +50,7 @@ def bump(ver: str, part: str) -> str:
 
 def main():
     part = (sys.argv[1] if len(sys.argv) > 1 else "patch").lower()
-    init_path = Path("mlx_gen_parity/__init__.py")
+    init_path = Path("mlx_genkit/__init__.py")
     proj_path = Path("pyproject.toml")
     old = read_version_pyinit(init_path)
     new = bump(old, part)
@@ -61,4 +61,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

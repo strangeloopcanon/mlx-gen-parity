@@ -1,4 +1,4 @@
-# mlx-genkit (formerly mlx-gen-parity)
+# mlx-genkit
 
 Small, reusable MLX generation and training toolkit that brings HF/Torch `generate()` feature parity and clean persona steering to Apple Silicon. It reuses mlx-lm primitives (caches, projections, speculative) and fills the missing parity pieces.
 
@@ -105,8 +105,8 @@ mask = build_action_mask(prompt_lens=[12, 20], seq_len=T)  # [B, T] bool
 ```
 
 Parity testing
-- Torch vs MLX: `python -m mlx_gen_parity.tests.parity_hf --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b --prompt 'hello'`
-- Suite (8 prompts): `python -m mlx_gen_parity.tests.parity_suite --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b`
+- Torch vs MLX: `python -m mlx_genkit.tests.parity_hf --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b --prompt 'hello'`
+- Suite (8 prompts): `python -m mlx_genkit.tests.parity_suite --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b`
 
 CLI wrapper
 ```
@@ -119,7 +119,7 @@ mlxgk-generate \
 
 Performance bench
 ```
-python -m mlx_gen_parity.tests.perf_bench --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b --prompt "Hello performance" --max-tokens 64
+python -m mlx_genkit.tests.perf_bench --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b --prompt "Hello performance" --max-tokens 64
 ```
 
 Releases
@@ -132,9 +132,6 @@ Releases
 Notes
 - Parity targets control‑surface equivalence: constraints, stops, finish reasons, determinism; token streams may differ across frameworks/devices.
 - Sampling fast path reuses mlx-lm’s decoding loop and caches for best performance on Apple Silicon.
-
-Renaming
-- This project was previously published as `mlx-gen-parity`. The Python import `mlx_gen_parity` continues to work for compatibility, but new code should prefer `mlx_genkit` and `pip install mlx-genkit`.
 
 Known limitations
 - Residual injection uses Python-level patching; highly optimized/compiled paths may bypass it. Use `forward_with_hidden(..., strict=True)` when you need deterministic capture/injection semantics.
