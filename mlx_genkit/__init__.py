@@ -46,4 +46,4 @@ from .training import (
 
 from .utils import ema_update, build_action_mask, stable_softmax, clone_reference
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"

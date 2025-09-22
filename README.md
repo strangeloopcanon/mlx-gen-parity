@@ -152,6 +152,19 @@ CLI chat and stop strings
 Defaults
 - The CLI will, by default, auto-apply chat templates when the loaded tokenizer exposes a chat template (has `apply_chat_template` and a non-empty `chat_template`). Use `--no-auto-chat` to turn this off.
 
+Prefetch and convert (download)
+```
+# Download an HF repo and convert to MLX format without loading into memory.
+# Prints the local path, e.g., ./mlx_cache/Qwen_Qwen2-7B-Instruct
+mlxgk-download --model Qwen/Qwen2-7B-Instruct
+
+# Options
+#  --cache-dir DIR           Cache location (default: ./mlx_cache)
+#  --quantize                Quantize during conversion
+#  --trust-remote-code       Allow custom code from the repo
+#  --force                   Reconvert and overwrite existing cache
+```
+
 Performance bench
 ```
 python -m mlx_genkit.tests.perf_bench --hf-model Qwen/Qwen3-0.6B --mlx-model ./mlx_qwen3_0_6b --prompt "Hello performance" --max-tokens 64

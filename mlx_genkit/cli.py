@@ -7,7 +7,7 @@ import os
 import sys
 
 from .api import GenerationConfig, generate
-from .loader import auto_load
+from .loader import auto_load, _sanitize_repo_id
 
 
 def _parse_int_list(s: str) -> List[int]:
@@ -164,3 +164,33 @@ def generate_cmd():
 
     res = generate(model, tokenizer, prompt_input, cfg)
     print(res["text"])  # noqa: T201
+
+
+def download_cmd():
+    ap = argparse.ArgumentParser(prog="mlxgk.download", description="Download and convert an HF model to MLX format, print local path")
+    ap.add_argument("--model", required=True, help="HF repo id or local MLX path")
+    ap.add_argument("--cache-dir", default=None, help="Cache directory for converted models (default: ./mlx_cache)")
+    ap.add_argument("--quantize", action="store_true", help="Quantize during conversion")
+    ap.add_argument("--trust-remote-code", action="store_true", help="Allow custom model code from the repo")
+    ap.add_argument("--force", action="store_true", help="Reconvert even if cached model exists (deletes existing cache dir)")
+    args = ap.parse_args()
+
+    cache_dir = args.cache_dir or os.path.join(os.getcwd(), "mlx_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    local_name = _sanitize_repo_id(args.model)
+    local_path = os.path.join(cache_dir, local_name)
+
+    if args.force and os.path.exists(local_path):
+        import shutil
+
+        shutil.rmtree(local_path)
+
+    # Convert without loading into memory
+    _m, _t, out_path = auto_load(
+        args.model,
+        cache_dir=cache_dir,
+        quantize=args.quantize,
+        trust_remote_code=args.trust_remote_code,
+        load_model=False,
+    )
+    print(out_path)  # noqa: T201

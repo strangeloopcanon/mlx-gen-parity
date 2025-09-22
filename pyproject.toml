@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mlx-genkit"
-version = "0.3.2"
+version = "0.3.3"
 description = "MLX generation parity utils with HF/Torch-compatible sampling, processors, and steering hooks"
 authors = [{name = "Your Team"}]
 readme = "README.md"
@@ -26,3 +26,4 @@ mlx_genkit = ["**/*.py"]
 
 [project.scripts]
 mlxgk-generate = "mlx_genkit.cli:generate_cmd"
+mlxgk-download = "mlx_genkit.cli:download_cmd"
