@@ -39,6 +39,8 @@ class GenerationConfig:
     eos_token_ids: Optional[List[int]] = None
     pad_token_id: Optional[int] = None
     stop_sequences: Optional[List[str]] = None
+    # Alias for convenience; merged with stop_sequences if provided
+    stop_strings: Optional[List[str]] = None
     bad_words_ids: Optional[List[List[int]]] = None
     force_words_ids: Optional[List[List[int]]] = None
     min_new_tokens: Optional[int] = None
@@ -57,6 +59,10 @@ class GenerationConfig:
     num_beams: int = 1
     length_penalty: float = 0.0
     early_stopping: bool = False
+    # Chat template
+    auto_chat_template: Optional[bool] = None  # None: auto if tokenizer has chat_template; True/False to force
+    system_prompt: Optional[str] = None  # Optional system message when auto-applying chat template
+    assume_user_chat: bool = False  # Treat plain string as a user message for chat templating
 
 
 def _prepare_prompt(tokenizer, prompt: Union[str, Sequence[int]]):
@@ -66,6 +72,63 @@ def _prepare_prompt(tokenizer, prompt: Union[str, Sequence[int]]):
     else:
         ids = list(prompt)
     return ids, tk
+
+
+from typing import Optional as _Optional  # local alias to avoid collision
+
+
+def _maybe_render_chat_prompt(tokenizer: Any, prompt: Any, config: _Optional[GenerationConfig] = None) -> Any:
+    """If prompt looks like HF-style chat `messages`, render with chat template.
+
+    Accepts a list of {role, content} dicts (or tuples) and returns a string
+    produced via `tokenizer.apply_chat_template` when available, otherwise a
+    simple fallback formatting. If `prompt` is already a string or a list of
+    ints, it is returned unchanged.
+    """
+    # Fast-path: strings and explicit token id sequences are left unchanged
+    if isinstance(prompt, str):
+        # Optional auto-application for plain strings
+        auto = None
+        if config is not None:
+            # assume_user_chat explicitly forces chat templating for plain prompts
+            if getattr(config, "assume_user_chat", False):
+                auto = True
+            else:
+                auto = config.auto_chat_template
+        # Heuristic default: if tokenizer exposes a non-empty chat_template, assume chat model
+        if auto is None:
+            auto = bool(getattr(tokenizer, "chat_template", None)) and hasattr(tokenizer, "apply_chat_template")
+        if auto:
+            try:
+                messages = []
+                if config and getattr(config, "system_prompt", None):
+                    messages.append({"role": "system", "content": config.system_prompt})
+                messages.append({"role": "user", "content": prompt})
+                from .interop import apply_chat_template  # local import
+
+                return apply_chat_template(tokenizer, messages, add_generation_prompt=True)
+            except Exception:
+                # Fallback: return unchanged
+                return prompt
+        return prompt
+    if isinstance(prompt, (list, tuple)) and all(isinstance(x, int) for x in prompt):
+        return prompt
+    # Detect list of chat message dicts
+    is_messages = False
+    if isinstance(prompt, (list, tuple)) and prompt:
+        first = prompt[0]
+        if isinstance(first, dict) and ("role" in first and "content" in first):
+            is_messages = True
+    if not is_messages:
+        return prompt
+    # Render using interop helper
+    try:
+        from .interop import apply_chat_template  # local import to avoid cycles
+
+        return apply_chat_template(tokenizer, prompt, add_generation_prompt=True)
+    except Exception:
+        # If anything goes wrong, just pass prompt through
+        return prompt
 
 
 def _maybe_make_prompt_cache(model, max_kv_size: Optional[int] = None):
@@ -214,6 +277,8 @@ def generate(
     mx, _ = try_import_mlx()
     set_seed(config.seed)
 
+    # If prompt is chat messages, first render with chat template (if available)
+    prompt = _maybe_render_chat_prompt(tokenizer, prompt, config)
     ids, tk = _prepare_prompt(tokenizer, prompt)
     components = detect_components(model)
     eos_ids: List[int] = []
@@ -279,10 +344,19 @@ def generate(
     # Try to use mlx-lm cache if available, otherwise fallback to no-cache
     prompt_cache = _maybe_make_prompt_cache(model, max_kv_size=config.max_kv_size)
 
+    # Merge stop sequences from both fields (deduplicated, order-preserving)
+    raw_stops: List[str] = []
+    if config.stop_sequences:
+        raw_stops.extend([s for s in config.stop_sequences if s])
+    if config.stop_strings:
+        for s in config.stop_strings:
+            if s and s not in raw_stops:
+                raw_stops.append(s)
+
     # Precompute token-level stop sequences if provided
     stop_token_seqs: List[List[int]] = []
-    if config.stop_sequences:
-        for s in config.stop_sequences:
+    if raw_stops:
+        for s in raw_stops:
             ss = s or ""
             if ss:
                 stop_token_seqs.append(make_tokenizer_bridge(tokenizer).encode(ss, add_special_tokens=False))
@@ -375,11 +449,11 @@ def generate(
                     if hit:
                         break
                 # String fallback stops on generated suffix
-                if config.stop_sequences:
+                if raw_stops:
                     gen_tokens = tokens[len(ids):]
                     if gen_tokens:
                         decoded_gen = tk.decode(gen_tokens)
-                        for s in config.stop_sequences:
+                        for s in raw_stops:
                             if s and s in decoded_gen:
                                 idx = decoded_gen.find(s)
                                 text_trimmed = decoded_gen[:idx]
@@ -418,8 +492,10 @@ def generate(
             draft_model = None
             if config.draft_model_id:
                 try:
-                    from mlx_lm import load as mlx_load  # type: ignore
-                    draft_model, _ = mlx_load(config.draft_model_id)
+                    # Use auto_load to support HF repo ids with on-demand conversion
+                    from .loader import auto_load  # type: ignore
+
+                    draft_model, _tk, _local = auto_load(config.draft_model_id)
                 except Exception:
                     draft_model = None
             if draft_model is None:
@@ -481,11 +557,11 @@ def generate(
                         if hit:
                             break
                     # String fallback stops on generated suffix
-                    if config.stop_sequences:
+                    if raw_stops:
                         gen_tokens = tokens[len(ids):]
                         if gen_tokens:
                             decoded_gen = tk.decode(gen_tokens)
-                            for s in config.stop_sequences:
+                            for s in raw_stops:
                                 if s and s in decoded_gen:
                                     idx = decoded_gen.find(s)
                                     text_trimmed = decoded_gen[:idx]
@@ -569,13 +645,13 @@ def generate(
             if eos_reached:
                 break
         # String-level fallback stop sequences
-        if config.stop_sequences:
+        if raw_stops:
             # Only consider generated segment for stop matching
             gen_tokens = tokens[len(ids):]
             hit = False
             if gen_tokens:
                 decoded_gen = tk.decode(gen_tokens)
-                for s in config.stop_sequences:
+                for s in raw_stops:
                     if s and s in decoded_gen:
                         idx = decoded_gen.find(s)
                         text_trimmed = decoded_gen[:idx]

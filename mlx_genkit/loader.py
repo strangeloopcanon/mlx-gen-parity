@@ -38,6 +38,5 @@ def auto_load(repo_or_path: str, *, cache_dir: Optional[str] = None, quantize: b
 
         convert(repo_or_path, mlx_path=local_path, quantize=quantize, trust_remote_code=trust_remote_code)
     # Load converted
-    model, tokenizer = mlx_load(local_path)
+    model, tokenizer = mlx_load(local_path, trust_remote_code=trust_remote_code)
     return model, tokenizer, local_path
-

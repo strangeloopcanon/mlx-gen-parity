@@ -51,6 +51,32 @@ out = generate(model, tokenizer, 'Hello MLX parity', cfg)
 print(out['text'])
 ```
 
+Chat prompts (auto chat template)
+```
+# If you pass a list of HF-style messages, mlx-genkit will automatically
+# apply the tokenizer's chat template when available.
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Summarize MLX in 3 bullets."},
+]
+cfg = GenerationConfig(max_tokens=64, temperature=0.7)
+out = generate(model, tokenizer, messages, cfg)
+print(out['text'])
+```
+
+Auto-apply chat template for plain prompts
+```
+# You can also provide a plain string and have mlx-genkit wrap it
+# using the model's chat template when available. This is enabled
+# automatically if the tokenizer defines a chat_template; you can
+# force or disable it via GenerationConfig, or force with assume_user_chat.
+cfg = GenerationConfig(max_tokens=64, temperature=0.7, auto_chat_template=True, system_prompt="You are helpful")
+# Equivalent explicit flag:
+# cfg = GenerationConfig(max_tokens=64, temperature=0.7, assume_user_chat=True, system_prompt="You are helpful")
+out = generate(model, tokenizer, "Summarize MLX in 3 bullets.", cfg)
+print(out['text'])
+```
+
 Beam and constraints
 ```
 cfg = GenerationConfig(max_tokens=64, temperature=0.0, num_beams=4, early_stopping=True, length_penalty=0.2,
@@ -116,6 +142,15 @@ mlxgk-generate \
   --max-tokens 64 --temp 0.7 --top-p 0.95 \
   --num-beams 1 --no-repeat-ngram-size 2
 ```
+
+CLI chat and stop strings
+- Chat: `--messages-json '[{"role":"user","content":"hi"}]'` (auto-applies template)
+- Auto chat for plain prompts: add `--auto-chat` (or disable with `--no-auto-chat`); optional `--system "You are helpful"`
+- Force treating plain prompts as user messages: `--assume-user-chat` (equivalent to `--auto-chat`)
+- Stop strings: use `--stop` or the alias `--stop-strings` (comma-separated)
+
+Defaults
+- The CLI will, by default, auto-apply chat templates when the loaded tokenizer exposes a chat template (has `apply_chat_template` and a non-empty `chat_template`). Use `--no-auto-chat` to turn this off.
 
 Performance bench
 ```
