@@ -24,6 +24,7 @@ Homepage = "https://github.com/strangeloopcanon/mlx-genkit"
 
 [tool.setuptools]
 packages = ["mlx_genkit"]
+license-files = []
 
 [tool.setuptools.package-data]
 mlx_genkit = ["**/*.py"]
