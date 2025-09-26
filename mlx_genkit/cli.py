@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import importlib
 import json
-from typing import List, Any
 import os
 import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence
 
 from .api import GenerationConfig, generate
+from .structure.adherence import JsonAdherence
+from .structure.grammar import Grammar
+from .structure.logs import JsonlLogWriter
+from .structure.semantic import build_semantic_checks
+from .structure.stream import generate_stream
+from .structure.validators import ValidatorLike
+from .eval import EvalSuite
 from .loader import auto_load, _sanitize_repo_id
 
 
@@ -40,6 +50,174 @@ def _looks_like_chat_model(model_id_or_path: str) -> bool:
     return False
 
 
+def _load_json(path: str) -> Any:
+    with Path(path).expanduser().open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _load_json_schema(path: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not path:
+        return None
+    return _load_json(path)
+
+
+def _build_skeleton(schema: Optional[Dict[str, Any]]) -> Any:
+    if not isinstance(schema, dict):
+        return {}
+    schema_type = schema.get("type")
+    if schema_type == "object" or (schema_type is None and "properties" in schema):
+        props = schema.get("properties", {})
+        required = schema.get("required", list(props.keys()))
+        out: Dict[str, Any] = {}
+        for key in required:
+            out[key] = _build_skeleton(props.get(key, {}))
+        return out
+    if schema_type == "array":
+        return []
+    if schema_type in {"number", "integer"}:
+        return 0
+    if schema_type == "boolean":
+        return False
+    return ""
+
+
+def _parse_validator_spec(spec: str) -> ValidatorLike:
+    if spec in {"jsonschema", "json_schema"}:
+        return "jsonschema"
+    if spec.startswith("pydantic:"):
+        module_path = spec.split(":", 1)[1]
+        module_name, _, attr = module_path.rpartition(".")
+        if not module_name:
+            raise ValueError("pydantic validator requires module.Class path")
+        module = importlib.import_module(module_name)
+        model_cls = getattr(module, attr)
+        return ("pydantic", model_cls)
+    if ":" in spec:
+        module_name, attr = spec.split(":", 1)
+        module = importlib.import_module(module_name)
+        fn = getattr(module, attr)
+        return fn
+    raise ValueError(f"Unsupported validator spec: {spec}")
+
+
+def _load_semantic_checks(path: Optional[str]) -> Optional[List[Any]]:
+    if not path:
+        return None
+    payload = _load_json(path)
+    if not isinstance(payload, list):
+        raise ValueError("semantic checks file must describe a list")
+    return build_semantic_checks(payload)
+
+
+def _resolve_grammar(args, json_schema: Optional[Dict[str, Any]]) -> Optional[Grammar]:
+    if args.grammar_gbnf:
+        grammar_text = Path(args.grammar_gbnf).expanduser().read_text(encoding="utf-8")
+        return Grammar.gbnf(grammar_text)
+    if json_schema is not None:
+        return Grammar.json_schema(json_schema)
+    return None
+
+
+def _make_parse_fail_hook(kind: Optional[str], schema: Optional[Dict[str, Any]]):
+    if not kind:
+        return None
+    if kind == "skeleton":
+        skeleton_obj = _build_skeleton(schema)
+        skeleton_text = json.dumps(skeleton_obj, indent=2)
+
+        def hook(_: str, __: Exception) -> Optional[str]:
+            return skeleton_text
+
+        return hook
+    if kind == "trim":
+        def hook(text: str, _: Exception) -> Optional[str]:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                return text[start : end + 1]
+            return None
+
+        return hook
+    raise ValueError(f"Unknown on-parse-fail handler: {kind}")
+
+
+def _deep_merge(base: Any, override: Any) -> Any:
+    if isinstance(base, dict) and isinstance(override, dict):
+        merged = dict(base)
+        for key, value in override.items():
+            merged[key] = _deep_merge(base.get(key), value)
+        return merged
+    return override if override is not None else base
+
+
+def _make_semantic_fail_hook(kind: Optional[str], schema: Optional[Dict[str, Any]]):
+    if not kind:
+        return None
+    if kind == "fill-required":
+        skeleton_obj = _build_skeleton(schema)
+
+        def hook(obj: Dict[str, Any], _violations: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+            return _deep_merge(skeleton_obj, copy.deepcopy(obj))
+
+        return hook
+    raise ValueError(f"Unknown on-semantic-fail handler: {kind}")
+
+
+def _build_structured_kwargs(
+    args: argparse.Namespace,
+    json_schema: Optional[Dict[str, Any]],
+    grammar: Optional[Grammar],
+) -> Dict[str, Any]:
+    validators: Optional[List[ValidatorLike]] = None
+    if args.validator:
+        validators = [_parse_validator_spec(v) for v in args.validator]
+
+    semantic_checks = _load_semantic_checks(args.semantic_checks)
+
+    needs_adherence = any(
+        [
+            json_schema is not None,
+            validators,
+            semantic_checks,
+            bool(args.strict_only_json),
+            int(args.retries) > 0,
+            args.on_parse_fail,
+            args.on_semantic_fail,
+            args.log_jsonl,
+        ]
+    )
+
+    adherence = (
+        JsonAdherence(
+            retries=max(0, int(args.retries)),
+            strict_only_json=bool(args.strict_only_json),
+        )
+        if needs_adherence
+        else None
+    )
+
+    parse_hook = _make_parse_fail_hook(args.on_parse_fail, json_schema)
+    semantic_hook = _make_semantic_fail_hook(args.on_semantic_fail, json_schema)
+    log_writer = (
+        JsonlLogWriter(args.log_jsonl, include_raw_on_fail=args.log_raw_on_fail)
+        if args.log_jsonl
+        else None
+    )
+
+    kwargs: Dict[str, Any] = {
+        "json_schema": json_schema,
+        "grammar": grammar,
+        "validators": validators,
+        "semantic_checks": semantic_checks,
+        "adherence": adherence,
+        "on_parse_fail": parse_hook,
+        "on_semantic_fail": semantic_hook,
+        "log_writer": log_writer,
+    }
+
+    return {key: value for key, value in kwargs.items() if value is not None}
+
+
 def generate_cmd():
     ap = argparse.ArgumentParser(prog="mlxgk.generate", description="Generate text with MLX + generation-parity features")
     ap.add_argument("--model", required=True, help="HF repo id or local MLX path")
@@ -61,6 +239,7 @@ def generate_cmd():
     ap.add_argument("--num-beams", type=int, default=1)
     ap.add_argument("--length-penalty", type=float, default=0.0)
     ap.add_argument("--early-stopping", action="store_true")
+    ap.add_argument("--backend", default=None, help="Force backend implementation (default: auto)")
     # Chat template controls
     grp = ap.add_mutually_exclusive_group()
     grp.add_argument("--auto-chat", action="store_true", help="Auto-apply chat template for plain prompts if the tokenizer has one")
@@ -78,10 +257,39 @@ def generate_cmd():
     ap.add_argument("--force-words", default=None, help="Comma-separated phrases to force (joined by tokenizer)")
     ap.add_argument("--speculative", action="store_true")
     ap.add_argument("--draft-model", default=None, help="Draft model id/path for speculative decoding")
+    # Structured generation options
+    ap.add_argument("--json-schema", default=None, help="Path to JSON Schema (object) file for structured adherence")
+    ap.add_argument("--grammar-gbnf", default=None, help="Optional GBNF grammar file")
+    ap.add_argument("--retries", type=int, default=0, help="Number of structured adherence retries")
+    ap.add_argument("--strict-only-json", action="store_true", help="Require responses to contain JSON only")
+    ap.add_argument(
+        "--validator",
+        action="append",
+        default=[],
+        help="Validator specification (jsonschema, pydantic:module.Model, or module:function)",
+    )
+    ap.add_argument("--semantic-checks", default=None, help="Path to JSON file describing semantic checks")
+    ap.add_argument(
+        "--on-parse-fail",
+        choices=["skeleton", "trim"],
+        default=None,
+        help="Post-processor when JSON parsing fails",
+    )
+    ap.add_argument(
+        "--on-semantic-fail",
+        choices=["fill-required"],
+        default=None,
+        help="Post-processor when semantic checks fail",
+    )
+    ap.add_argument("--log-jsonl", default=None, help="Path to append structured adherence logs (JSONL)")
+    ap.add_argument("--log-raw-on-fail", action="store_true", help="Include raw text when schema validation fails")
+    ap.add_argument("--pretty", action="store_true", help="Pretty print JSON output if available")
+    ap.add_argument("--stream", action="store_true", help="Stream tokens (best-effort) during generation")
     args = ap.parse_args()
 
     # Auto-load (convert if needed)
     model, tokenizer, local_path = auto_load(args.model)
+    print(f"[mlx-genkit] using model from {local_path}", file=sys.stderr)
 
     # Determine prompt input: messages (JSON) or plain string
     prompt_input: Any
@@ -148,6 +356,7 @@ def generate_cmd():
         force_words_ids=force_words_ids,
         use_speculative=args.speculative,
         draft_model_id=args.draft_model,
+        backend=args.backend,
     )
 
     # Telemetry: report whether chat templating will be applied
@@ -161,9 +370,66 @@ def generate_cmd():
         f"auto={cfg.auto_chat_template}, assume_user={cfg.assume_user_chat})",
         file=sys.stderr,
     )
+    json_schema = _load_json_schema(args.json_schema)
+    grammar = _resolve_grammar(args, json_schema)
+    generation_kwargs = _build_structured_kwargs(args, json_schema, grammar)
 
-    res = generate(model, tokenizer, prompt_input, cfg)
-    print(res["text"])  # noqa: T201
+    backend_name = (cfg.backend or "mlx").lower()
+    if grammar and not grammar.supports_backend(backend_name):
+        if grammar.kind != "json_schema":
+            raise SystemExit(
+                f"Grammar kind '{grammar.kind}' is not supported by backend '{backend_name}'."
+            )
+        print(
+            f"[mlx-genkit] backend '{backend_name}' does not provide native grammar support; falling back to validator retries.",
+            file=sys.stderr,
+        )
+
+    if args.stream:
+        stream_printed = False
+
+        def _on_token(tok: Any, _idx: int) -> None:
+            nonlocal stream_printed
+            stream_printed = True
+            if isinstance(tok, int):
+                fragment = tokenizer.decode([tok])
+            else:
+                fragment = str(tok)
+            if fragment:
+                sys.stdout.write(fragment)
+                sys.stdout.flush()
+
+        result = generate_stream(
+            model,
+            tokenizer,
+            prompt_input,
+            cfg,
+            hooks=None,
+            on_token=_on_token,
+            **generation_kwargs,
+        )
+        if stream_printed:
+            print()
+    else:
+        result = generate(
+            model,
+            tokenizer,
+            prompt_input,
+            cfg,
+            hooks=None,
+            **generation_kwargs,
+        )
+
+    if args.pretty and result.json is not None:
+        print(json.dumps(result.json, indent=2))  # noqa: T201
+    elif not args.stream:
+        print(result.text)  # noqa: T201
+
+    print(
+        f"[mlx-genkit] schema_ok={result.schema_ok} only_json={result.only_json} "
+        f"semantic_ok={result.semantic_ok} attempts={result.attempts}",
+        file=sys.stderr,
+    )
 
 
 def download_cmd():
@@ -194,3 +460,24 @@ def download_cmd():
         load_model=False,
     )
     print(out_path)  # noqa: T201
+
+
+def eval_cmd():
+    ap = argparse.ArgumentParser(prog="mlxgk.eval", description="Run adherence evaluation suites and emit a markdown report")
+    ap.add_argument("--suite", required=True, help="Path to suite YAML/JSON definition")
+    ap.add_argument("--markdown", default=None, help="Optional path to write markdown report")
+    ap.add_argument("--json", default=None, help="Optional path to write JSON summary")
+    args = ap.parse_args()
+
+    suite = EvalSuite(args.suite)
+    outcomes = suite.run()
+    markdown = EvalSuite.render_markdown(outcomes, suite.name)
+    summary = EvalSuite.to_dict(outcomes, suite.name)
+
+    if args.markdown:
+        Path(args.markdown).expanduser().write_text(markdown, encoding="utf-8")
+    else:
+        print(markdown)  # noqa: T201
+
+    if args.json:
+        Path(args.json).expanduser().write_text(json.dumps(summary, indent=2), encoding="utf-8")

@@ -16,6 +16,8 @@ Scope
 Public API
 
 - generate(model, tokenizer, prompt, config, hooks=None): main entry (single/batch).
+- generate(..., json_schema=..., adherence=JsonAdherence(...), semantic_checks=[...]): structured enforcement with retries + validation
+  and automatic trimming of ```json fenced blocks.
 - GenerationConfig: mirrors HF fields (temperature, top_p, top_k, max_tokens, repetition_penalty, no_repeat_ngram, frequency/presence
 penalties, seed).
 - hooks: list of steering hooks:

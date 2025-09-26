@@ -9,6 +9,36 @@ def _sanitize_repo_id(repo_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", repo_id.strip())
 
 
+def _call_mlx_load(path: str, *, trust_remote_code: bool = False):
+    from inspect import signature
+
+    from mlx_lm import load as mlx_load  # type: ignore
+
+    sig = signature(mlx_load)
+    kwargs = {}
+    if "trust_remote_code" in sig.parameters:
+        kwargs["trust_remote_code"] = trust_remote_code
+    return mlx_load(path, **kwargs)
+
+
+def _call_mlx_convert(
+    repo_or_path: str,
+    *,
+    mlx_path: str,
+    quantize: bool,
+    trust_remote_code: bool,
+):
+    from inspect import signature
+
+    from mlx_lm import convert as mlx_convert  # type: ignore
+
+    sig = signature(mlx_convert)
+    kwargs = {"mlx_path": mlx_path, "quantize": quantize}
+    if "trust_remote_code" in sig.parameters:
+        kwargs["trust_remote_code"] = trust_remote_code
+    return mlx_convert(repo_or_path, **kwargs)
+
+
 def auto_load(
     repo_or_path: str,
     *,
@@ -25,12 +55,10 @@ def auto_load(
 
     Returns: (model, tokenizer, local_path)
     """
-    from mlx_lm import load as mlx_load
-
     # First try to load directly (if asked to load)
     if load_model:
         try:
-            model, tokenizer = mlx_load(repo_or_path, trust_remote_code=trust_remote_code)
+            model, tokenizer = _call_mlx_load(repo_or_path, trust_remote_code=trust_remote_code)
             return model, tokenizer, repo_or_path
         except Exception:
             pass
@@ -46,11 +74,14 @@ def auto_load(
     local_path = os.path.join(cache_dir, local_name)
     if not os.path.exists(local_path):
         # Convert
-        from mlx_lm import convert
-
-        convert(repo_or_path, mlx_path=local_path, quantize=quantize, trust_remote_code=trust_remote_code)
+        _call_mlx_convert(
+            repo_or_path,
+            mlx_path=local_path,
+            quantize=quantize,
+            trust_remote_code=trust_remote_code,
+        )
     # Load converted if requested
     if load_model:
-        model, tokenizer = mlx_load(local_path, trust_remote_code=trust_remote_code)
+        model, tokenizer = _call_mlx_load(local_path, trust_remote_code=trust_remote_code)
         return model, tokenizer, local_path
     return None, None, local_path
