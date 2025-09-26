@@ -7,6 +7,9 @@ Features
 - Constraints: `force_words_ids` (strict start + continuation), `suppress_tokens`, `begin_suppress_tokens`, multiple `eos_token_ids`, forced BOS/EOS and per-position `forced_decoder_ids`.
 - Modes: sampling (fast path via mlx-lm), beam (`num_beams`, `length_penalty`, `early_stopping`), speculative (mlx-lm), sliding KV (`max_kv_size`).
 - Hooks: ResidualInjectionHook (sampling) and LogitBiasHook (sampling/beam); SoftPromptHook for training.
+- Structured output enforcement: JSON-schema adherence, retry policies, semantic checks, and grammar stubs.
+- Streaming with incremental validation: token callbacks, schema-aware early exits, and detailed result metadata.
+- Batch helpers, JSONL adherence logging, and an eval harness for prompt suites.
 - Training (MLX): `loss_forward`, `xent_loss` (label smoothing), mixed-precision compute (bf16) with fp32 master weights.
 - Training utilities: `sequence_logprob`, `token_kl` for scoring and policy KL.
 - Model helpers: `ema_update`, `build_action_mask`, `stable_softmax`; best-effort `clone_reference`.
@@ -92,6 +95,85 @@ cfg = GenerationConfig(max_tokens=64, temperature=0.7, top_p=0.95,
 out = generate(model, tokenizer, 'Speculative test', cfg)
 ```
 
+Structured JSON output
+```
+from mlx_genkit import GenerationConfig, JsonAdherence, generate
+
+schema = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "confidence": {"type": "number"}
+    },
+    "required": ["summary", "confidence"],
+}
+
+cfg = GenerationConfig(max_tokens=220, temperature=0.0)
+result = generate(
+    model,
+    tokenizer,
+    "Summarise the change log in JSON",
+    cfg,
+    json_schema=schema,
+    adherence=JsonAdherence(retries=2, strict_only_json=True),
+)
+print(result.json)
+```
+- Structured adherence automatically strips common ```json fenced output and keeps
+  retrying with escalating prompts when `JsonAdherence(retries=...)` is configured.
+  Use `strict_only_json=True` to reject any non-JSON commentary.
+
+Structured DSL
+```
+from mlx_genkit import StructuredSpec, generate_structured
+
+spec = StructuredSpec(
+    schema=schema,
+    fields=["summary", "confidence"],
+    examples=[{"input": "Bug fix", "output": {"summary": "...", "confidence": 0.9}}],
+)
+res = generate_structured(model, tokenizer, task="Summarise the diff", spec=spec)
+print(res.json)
+```
+
+Streaming & incremental validation
+```
+from mlx_genkit import (
+    GenerationConfig,
+    JsonAdherence,
+    StreamCallbacks,
+    generate_stream,
+)
+
+def stream_json(model, tokenizer, prompt, schema):
+    emitted = []
+
+    def on_token(token, idx):
+        emitted.append(token)
+        piece = tokenizer.decode([token]) if isinstance(token, int) else str(token)
+        if piece:
+            print(piece, end="", flush=True)
+
+    def on_invalid_path(info):
+        print("\n[invalid path detected]", info["message"])
+
+    callbacks = StreamCallbacks(on_token=on_token, on_invalid_path=on_invalid_path)
+    result = generate_stream(
+        model,
+        tokenizer,
+        prompt,
+        GenerationConfig(max_tokens=128, temperature=0.0),
+        json_schema=schema,
+        adherence=JsonAdherence(strict_only_json=True, retries=1),
+        on_token=callbacks.on_token,
+        on_invalid_path=callbacks.on_invalid_path,
+        stop_on_invalid=False,
+    )
+    print("\nAttempts:", result.attempts, " tokens:", len(emitted))
+    return result
+```
+`StreamCallbacks` let you observe every token while the incremental monitor enforces the schema. Leave `stop_on_invalid=True` for hard stops, or set it to `False` to keep streaming after the warning while JSON retries repair the output.
+
 Persona steering
 ```
 import mlx.core as mx
@@ -143,6 +225,14 @@ mlxgk-generate \
   --num-beams 1 --no-repeat-ngram-size 2
 ```
 
+Structured CLI flags
+- `--json-schema schema.json` enable schema validation (optionally combine with `--retries 2`).
+- `--strict-only-json` forbid commentary; `--stream` prints incremental output while validating.
+- `--validator jsonschema --validator mypkg.validators:custom` layer pluggable validators.
+- `--semantic-checks checks.json` applies `must_contain`, `enum_in`, and `regex_on_field` predicates.
+- `--log-jsonl adherence.jsonl --log-raw-on-fail` capture adherence diagnostics per run.
+- `--backend` selects the decoding backend (`mlx`, `transformers`, or `vllm`) and validates grammar support.
+
 CLI chat and stop strings
 - Chat: `--messages-json '[{"role":"user","content":"hi"}]'` (auto-applies template)
 - Auto chat for plain prompts: add `--auto-chat` (or disable with `--no-auto-chat`); optional `--system "You are helpful"`
@@ -163,6 +253,27 @@ mlxgk-download --model Qwen/Qwen2-7B-Instruct
 #  --quantize                Quantize during conversion
 #  --trust-remote-code       Allow custom code from the repo
 #  --force                   Reconvert and overwrite existing cache
+```
+
+Adherence eval harness
+```
+mlxgk-eval --suite adherence_suite.yaml --markdown report.md --json report.json
+```
+Example suite (`adherence_suite.yaml`):
+```
+name: adherence_smoke
+model: Qwen/Qwen3-0.6B
+cases:
+  - name: summary
+    prompt: "Return a JSON object with summary and confidence"
+    json_schema:
+      type: object
+      properties:
+        summary: {type: string}
+        confidence: {type: number}
+      required: [summary, confidence]
+    retries: 2
+    strict_only_json: true
 ```
 
 Performance bench
