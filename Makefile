@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: help bump-version git-release
+.PHONY: help bump-version git-release pypi test-pypi publish
 
 help:
 	@echo "Targets:"
@@ -36,3 +36,11 @@ test-pypi:
 	rm -rf dist/ build/
 	$(PYTHON) -m build
 	$(PYTHON) -m twine upload --repository testpypi dist/*
+
+publish:
+	@echo "==> Bumping patch version"
+	$(MAKE) bump-version
+	@echo "==> Building and uploading to PyPI"
+	$(MAKE) pypi
+	@echo "==> Tagging and pushing git release"
+	$(MAKE) git-release

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mlx-genkit"
-version = "0.4.0"
+version = "0.4.2"
 description = "MLX generation parity utils with HF/Torch-compatible sampling, processors, and steering hooks"
 authors = [{name = "Your Team"}]
 readme = "README.md"
@@ -13,6 +13,10 @@ dependencies = [
   "mlx>=0.17.0",
   "mlx-lm>=0.17.0",
   "transformers>=4.40.0; python_version >= '3.9'",
+]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
 ]
 
 [project.urls]
