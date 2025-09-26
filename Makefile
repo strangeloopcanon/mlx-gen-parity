@@ -40,7 +40,10 @@ test-pypi:
 publish:
 	@echo "==> Bumping patch version"
 	$(MAKE) bump-version
-	@echo "==> Building and uploading to PyPI"
-	$(MAKE) pypi
-	@echo "==> Tagging and pushing git release"
-	$(MAKE) git-release
+	@VERSION=$$(sed -n "s/^__version__ = ['\"]\(.*\)['\"]/\1/p" mlx_genkit/__init__.py); \
+		echo "==> Building and uploading to PyPI"; \
+		$(MAKE) pypi; \
+		echo "==> Tagging and pushing git release"; \
+		$(MAKE) git-release; \
+		echo "==> Creating GitHub release v$${VERSION}"; \
+		gh release create v$${VERSION} dist/* --generate-notes
